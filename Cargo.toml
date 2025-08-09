@@ -1,0 +1,19 @@
+[package]
+name = "slasher"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[[test]]
+name = "ui"
+harness = false
+
+[dev-dependencies]
+ctrlc = "3.4.7"
+ui_test = "0.30.2"
+
+[package.metadata.rust-analyzer]
+# This crate uses #[feature(rustc_private)].
+# See https://github.com/rust-analyzer/rust-analyzer/pull/7891
+rustc_private = true

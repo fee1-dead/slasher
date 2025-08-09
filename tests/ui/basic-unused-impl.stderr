@@ -1,0 +1,14 @@
+error: implementation of MyTrait for u8 is unused
+ --> tests/ui/basic-unused-impl.rs:5:1
+  |
+5 | impl MyTrait for u8 {}
+  | ^^^^^^^^^^^^^^^^^^^
+  |
+note: the lint level is defined here
+ --> tests/ui/basic-unused-impl.rs:1:9
+  |
+1 | #![deny(redetect::unused)]
+  |         ^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
