@@ -16,11 +16,13 @@ mod unused_private_trait_impls;
 
 use std::sync::OnceLock;
 
+use regex::Regex;
 use rustc_data_structures::fx::FxIndexSet;
 use rustc_driver::{
     Callbacks, Compilation, DEFAULT_BUG_REPORT_URL, args, catch_with_exit_code,
     init_rustc_env_logger, install_ctrlc_handler, install_ice_hook, run_compiler,
 };
+use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_interface::Config;
 use rustc_interface::interface::Compiler;
 use rustc_lint::{Level, Lint};
@@ -60,10 +62,25 @@ impl Callbacks for RedetectCallbacks {
         })
     }
     fn after_analysis<'tcx>(&mut self, _compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
-        /* if tcx.crate_name(LOCAL_CRATE).as_str() != "rustc_metadata" {
+        let current_crate = tcx.crate_name(LOCAL_CRATE);
+        /* if current_crate.as_str() != "rustc_metadata" {
             return Compilation::Continue;
         } */
-        unused_private_trait_impls::run(tcx);
+        if let Ok(root) = std::env::var("SLASHER_WORKSPACE_ROOT")
+        {
+            // workspace reports don't need to care about private trait impls since we work on all traits
+            // https://github.com/rust-lang/regex/discussions/737
+            let Ok(re) = Regex::new(&format!("^(?:{root})$")) else { return Compilation::Continue };
+            if !re.is_match(current_crate.as_str()) {
+                return Compilation::Continue;
+            }
+
+            
+
+        } else {
+            unused_private_trait_impls::run(tcx);
+        }
+        
 
         Compilation::Continue
     }
