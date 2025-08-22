@@ -8,7 +8,7 @@ fn main() -> ui_test::color_eyre::Result<()> {
         bail!("cargo process failed")
     }
     unsafe {
-        std::env::set_var("RUSTC", "./target/release/redetect");
+        std::env::set_var("RUSTC", "./target/release/slasher");
     }
     let config = Config::rustc("tests/ui");
     let abort_check = config.abort_check.clone();

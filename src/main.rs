@@ -1,6 +1,7 @@
 #![feature(rustc_private)]
 extern crate rustc_data_structures;
 extern crate rustc_driver;
+extern crate rustc_errors;
 extern crate rustc_hir;
 extern crate rustc_infer;
 extern crate rustc_interface;
@@ -13,6 +14,7 @@ extern crate rustc_trait_selection;
 extern crate rustc_type_ir;
 
 mod unused_private_trait_impls;
+mod workspace_unused_trait_impls;
 
 use std::sync::OnceLock;
 
@@ -66,8 +68,10 @@ impl Callbacks for RedetectCallbacks {
         /* if current_crate.as_str() != "rustc_metadata" {
             return Compilation::Continue;
         } */
+        // eprintln!("1");
         if let Ok(root) = std::env::var("SLASHER_WORKSPACE_ROOT")
         {
+            // eprintln!("{root:?} = {current_crate:?}");
             // workspace reports don't need to care about private trait impls since we work on all traits
             // https://github.com/rust-lang/regex/discussions/737
             let Ok(re) = Regex::new(&format!("^(?:{root})$")) else { return Compilation::Continue };
@@ -75,8 +79,7 @@ impl Callbacks for RedetectCallbacks {
                 return Compilation::Continue;
             }
 
-            
-
+            workspace_unused_trait_impls::run(tcx);
         } else {
             unused_private_trait_impls::run(tcx);
         }

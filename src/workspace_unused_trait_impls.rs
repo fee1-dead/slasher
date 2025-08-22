@@ -1,9 +1,12 @@
+use regex::Regex;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
+use rustc_errors::Diag;
 use rustc_hir as hir;
 use rustc_hir::HirId;
-use rustc_hir::def_id::{DefId, LOCAL_CRATE};
+use rustc_hir::def_id::DefId;
 use rustc_infer::infer::{InferCtxt, TyCtxtInferExt};
-use rustc_middle::middle::privacy;
+use rustc_lint::Level;
+use rustc_middle::lint::{LevelAndSource, LintLevelSource, lint_level};
 use rustc_middle::mir::mono::MonoItem;
 use rustc_middle::mir::visit::Visitor as _;
 use rustc_middle::mir::{self, CastKind, Rvalue};
@@ -28,9 +31,6 @@ struct MirVisitor<'a, 'tcx> {
 
 impl<'a, 'tcx> Visitor<'a, 'tcx> {
     fn mark_impl(&mut self, i: DefId) {
-        if !i.is_local() {
-            return;
-        }
         let Some(tr) = self.infcx.tcx.trait_id_of_impl(i) else {
             return;
         };
@@ -101,25 +101,18 @@ impl<'tcx> ProofTreeVisitor<'tcx> for Visitor<'_, 'tcx> {
 }
 
 pub(super) fn run(tcx: TyCtxt<'_>) {
-    let effective_vis = tcx.effective_visibilities(());
+    let re = std::env::var("SLASHER_TRAIT_RE").unwrap();
+    let re = Regex::new(&format!("^(?:{re})$")).unwrap();
     let mut traits: FxHashMap<DefId, FxHashSet<DefId>> = tcx
-        .traits(LOCAL_CRATE)
-        .iter()
-        .copied()
-        .filter(|&tr| {
-            // traits that are never reachable to foreign crates
-            !effective_vis.is_public_at_level(
-                tr.as_local().unwrap(),
-                privacy::Level::ReachableThroughImplTrait,
-            )
-        })
+        .all_traits_including_private()
+        .filter(|tr| re.is_match(tcx.item_name(tr).as_str()))
         .map(|did| (did, FxHashSet::default()))
         .collect();
 
     let mono_items = tcx.collect_and_partition_mono_items(());
     for cgu in mono_items.codegen_units {
         for (item, _) in cgu.items_in_deterministic_order(tcx) {
-            // println!("{item:?}");
+            println!("{item:?}");
             if let MonoItem::Fn(f) = item {
                 let env = TypingEnv::post_analysis(tcx, f.def.def_id());
                 let (infcx, param_env) = tcx
@@ -145,17 +138,37 @@ pub(super) fn run(tcx: TyCtxt<'_>) {
         }
     }
 
+    let wre = std::env::var("SLASHER_WORKSPACE_RE").unwrap();
+    let wre = Regex::new(&format!("^(?:{wre})$")).unwrap();
     for (tr, set) in traits {
-        for imp in tcx.local_trait_impls(tr) {
-            if set.contains(&imp.to_def_id()) {
+        for imp in tcx.all_impls(tr) {
+            if !wre.is_match(tcx.crate_name(imp.krate).as_str()) {
                 continue;
             }
-            let ty = tcx.type_of(*imp).instantiate_identity();
+            if set.contains(&imp) {
+                continue;
+            }
+            let ty = tcx.type_of(imp).instantiate_identity();
             let tr = tcx.item_name(tr);
-            let span = tcx.sess.source_map().guess_head_span(tcx.def_span(*imp));
-            tcx.node_span_lint(&crate::LINT, HirId::make_owner(*imp), span, |diag| {
+            let span = tcx.sess.source_map().guess_head_span(tcx.def_span(imp));
+            let decorate = |diag: &mut Diag<'_, ()>| {
                 diag.primary_message(format!("implementation of {tr} for {ty} is unused"));
-            });
+            };
+            if let Some(local) = imp.as_local() {
+                tcx.node_span_lint(&crate::LINT, HirId::make_owner(local), span, decorate);
+            } else {
+                lint_level(
+                    tcx.sess,
+                    &crate::LINT,
+                    LevelAndSource {
+                        level: Level::Warn,
+                        lint_id: None,
+                        src: LintLevelSource::Default,
+                    },
+                    Some(span.into()),
+                    decorate,
+                );
+            }
         }
     }
 }
